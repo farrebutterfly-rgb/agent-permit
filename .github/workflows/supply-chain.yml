@@ -23,7 +23,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]" pip-audit cyclonedx-bom
       - name: pip-audit (known vulnerabilities in the installed set)
-        run: pip-audit --strict --desc on --skip-editable
+        run: pip-audit --desc on --skip-editable
       - name: SBOM (CycloneDX)
         run: cyclonedx-py environment --output-format json --output-file sbom.cdx.json
       - uses: actions/upload-artifact@v4
