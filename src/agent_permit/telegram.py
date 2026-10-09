@@ -1,8 +1,9 @@
 """Telegram channel: a message with Approve and Deny buttons, decided by long polling.
 
 Long polling means no public web server is needed: the poller calls getUpdates and
-the phone talks to Telegram. Only button presses from the configured chat and,
-if set, the configured user ids are accepted. Everything else is logged and ignored.
+the phone talks to Telegram. Only button presses and the commands /freeze and
+/unfreeze from the configured chat and, if set, the configured user ids are accepted.
+Everything else is logged and ignored.
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ class TelegramChannel:
         """Apply one update. Returns a short description of what happened, for logs and tests."""
         cq = update.get("callback_query")
         if not cq:
-            return None
+            return self._command(update.get("message") or {})
         msg = cq.get("message") or {}
         chat = (msg.get("chat") or {}).get("id")
         user = (cq.get("from") or {}).get("id")
@@ -106,8 +107,29 @@ class TelegramChannel:
             )
         return result
 
+    def _command(self, msg: dict) -> Optional[str]:
+        """/freeze <reason> and /unfreeze typed in the chat: the emergency stop from the phone."""
+        text = (msg.get("text") or "").strip()
+        if not text.startswith("/freeze") and not text.startswith("/unfreeze"):
+            return None
+        chat = (msg.get("chat") or {}).get("id")
+        user = (msg.get("from") or {}).get("id")
+        if chat != self.chat_id or (self.allowed is not None and user not in self.allowed):
+            self.store.audit.append("rejected_command", chat=chat, user=user)
+            return "rejected"
+        if text.startswith("/unfreeze"):
+            self.store.unfreeze(by=f"telegram:{user}")
+            result = "released: agents may act again"
+        else:
+            reason = text[len("/freeze"):].strip() or "no reason given"
+            self.store.freeze(reason, by=f"telegram:{user}")
+            result = f"FROZEN: every agent call is blocked until you send /unfreeze. Reason: {reason}"
+        self.api("sendMessage", {"chat_id": self.chat_id, "text": result})
+        return result
+
     def poll_once(self, timeout: int = 50) -> int:
-        updates = self.api("getUpdates", {"offset": self.offset, "timeout": timeout, "allowed_updates": ["callback_query"]})
+        updates = self.api("getUpdates", {"offset": self.offset, "timeout": timeout,
+                                          "allowed_updates": ["callback_query", "message"]})
         for u in updates:
             self.offset = max(self.offset, u["update_id"] + 1)
             self.handle(u)

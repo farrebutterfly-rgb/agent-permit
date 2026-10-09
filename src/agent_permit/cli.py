@@ -1,4 +1,4 @@
-"""Command line: agent-permit hook | mcp | telegram | list | approve | deny | verify."""
+"""Command line: agent-permit hook | mcp | telegram | list | approve | deny | freeze | verify."""
 
 from __future__ import annotations
 
@@ -35,6 +35,9 @@ def main(argv: Optional[List[str]] = None) -> int:
         if name == "approve":
             p.add_argument("--ttl", type=float, help="seconds the approval is valid")
             p.add_argument("--uses", type=int, default=1)
+    fz = sub.add_parser("freeze", help="emergency stop: on <reason> blocks every call, off releases, status")
+    fz.add_argument("state", choices=["on", "off", "status"])
+    fz.add_argument("reason", nargs="*", help="why (with on)")
     sub.add_parser("verify", help="check that the audit log chain is intact")
     a = ap.parse_args(argv)
 
@@ -71,6 +74,21 @@ def main(argv: Optional[List[str]] = None) -> int:
             print(e, file=sys.stderr)
             return 1
         print(f"#{p.id} {p.status}")
+        return 0
+    if a.cmd == "freeze":
+        if a.state == "on":
+            store.freeze(" ".join(a.reason) or "no reason given", by="cli")
+            print("frozen: every tool call is blocked until `agent-permit freeze off`")
+            return 0
+        if a.state == "off":
+            store.unfreeze(by="cli")
+            print("released")
+            return 0
+        fz = store.frozen()
+        if fz:
+            print(f"frozen since {time.strftime('%Y-%m-%d %H:%M', time.localtime(fz['since']))} by {fz['by']}: {fz['reason']}")
+            return 1
+        print("not frozen")
         return 0
     if a.cmd == "verify":
         ok, n, msg = store.audit.verify()

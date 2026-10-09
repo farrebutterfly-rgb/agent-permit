@@ -1,6 +1,6 @@
 """agent-permit: a human approves one exact agent action, from the phone, before it happens."""
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"
 
 from .store import Permit, Store, fingerprint  # noqa: E402
 

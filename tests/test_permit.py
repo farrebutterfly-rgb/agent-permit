@@ -197,7 +197,7 @@ def test_custom_rules_file(tmp_path, store):
 
 
 def test_mcp_tools_flow(cfg, store):
-    request_permit, check_permit, use_permit = tools(cfg, store, sleep=lambda s: None)
+    request_permit, check_permit, use_permit, _ = tools(cfg, store, sleep=lambda s: None)
     action = json.dumps({"tool": "send_email", "to": "a@example.com"})
     r = request_permit(action, "Send the offer to a@example.com")
     assert r["status"] == "pending" and r["created"]
@@ -217,7 +217,7 @@ def test_mcp_wait_returns_on_decision(cfg, store):
         if len(calls) == 2:
             store.decide(1, False, by="test")
 
-    request_permit, _, _ = tools(cfg, store, sleep=sleep)
+    request_permit, _, _, _ = tools(cfg, store, sleep=sleep)
     r = request_permit("delete the bucket", "Delete bucket logs-old", wait_seconds=60)
     assert r["status"] == "denied" and len(calls) == 2
 
@@ -308,3 +308,74 @@ def test_telegram_poll_advances_offset(store):
     ch = TelegramChannel(store, Api(), chat_id=42)
     assert ch.poll_once() == 1 and ch.offset == 11
     assert store.get(p.id).status == "approved"
+
+
+# ------------------------------------------------------------------ freeze
+
+
+def test_freeze_blocks_every_tool_call_even_without_rule(cfg, store):
+    assert evaluate({"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}}, cfg, store)[0] == 0
+    store.freeze("suspected leak via mail", by="test")
+    code, msg = evaluate({"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}}, cfg, store)
+    assert code == 2 and "FROZEN" in msg and "suspected leak" in msg
+    code, msg = evaluate(bash("git push origin main"), cfg, store)
+    assert code == 2 and "FROZEN" in msg
+    store.unfreeze(by="test")
+    assert evaluate({"tool_name": "Read", "tool_input": {"file_path": "/tmp/x"}}, cfg, store)[0] == 0
+
+
+def test_freeze_beats_an_existing_approval(store):
+    p, _ = store.request({"x": 1}, "x")
+    store.decide(p.id, True, by="test")
+    store.freeze("stop everything", by="test")
+    assert store.consume({"x": 1}) is None
+    store.unfreeze(by="test")
+    assert store.consume({"x": 1}).status == "used"
+
+
+def test_freeze_is_in_the_audit_chain(store):
+    store.freeze("drill", by="test")
+    store.consume({"x": 1})
+    store.unfreeze(by="test")
+    events = [e["event"] for e in store.audit.entries()]
+    assert events[-3:] == ["freeze", "frozen_refusal", "unfreeze"]
+    assert store.audit.verify()[0]
+
+
+def test_freeze_survives_a_new_store_instance(tmp_path):
+    path = str(tmp_path / "p.db")
+    Store(path).freeze("persisted", by="test")
+    assert Store(path).frozen()["reason"] == "persisted"
+
+
+def test_mcp_tools_refuse_while_frozen(cfg, store):
+    request_permit, check_permit, use_permit, freeze_status = tools(cfg, store, sleep=lambda s: None)
+    assert freeze_status() == {"frozen": False}
+    store.freeze("incident", by="test")
+    r = request_permit(json.dumps({"tool": "send_email"}), "Send it")
+    assert r["status"] == "frozen" and r["id"] is None and store.list() == []
+    assert use_permit(json.dumps({"tool": "send_email"}))["allowed"] is False
+    assert freeze_status()["frozen"] is True and freeze_status()["reason"] == "incident"
+
+
+def message(text, chat=42, user=7, update_id=9):
+    return {"update_id": update_id, "message": {"message_id": 6, "chat": {"id": chat}, "from": {"id": user}, "text": text}}
+
+
+def test_telegram_freeze_and_unfreeze_commands(store):
+    api = FakeApi()
+    ch = TelegramChannel(store, api, chat_id=42, allowed_user_ids=[7])
+    assert ch.handle(message("/freeze agent mailed the wrong client")).startswith("FROZEN")
+    assert store.frozen()["reason"] == "agent mailed the wrong client" and store.frozen()["by"] == "telegram:7"
+    assert ch.handle(message("/unfreeze")).startswith("released")
+    assert store.frozen() is None
+    assert api.calls[-1][0] == "sendMessage"
+
+
+def test_telegram_freeze_rejects_strangers(store):
+    api = FakeApi()
+    ch = TelegramChannel(store, api, chat_id=42, allowed_user_ids=[7])
+    assert ch.handle(message("/freeze now", user=8)) == "rejected"
+    assert ch.handle(message("/freeze now", chat=43)) == "rejected"
+    assert ch.handle(message("hello")) is None
+    assert store.frozen() is None
