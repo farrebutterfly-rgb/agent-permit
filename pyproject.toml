@@ -1,0 +1,38 @@
+[build-system]
+requires = ["hatchling>=1.27"]
+build-backend = "hatchling.build"
+
+[project]
+name = "agent-permit"
+version = "0.1.0"
+description = "Human approval for exact AI agent actions: a Claude Code hook and an MCP server, with phone approval over Telegram and a tamper-evident audit log."
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+authors = [{ name = "HolgerAI AB" }]
+keywords = ["ai-agents", "mcp", "claude-code", "human-in-the-loop", "approval", "guardrails", "audit-log"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Topic :: Security",
+    "Typing :: Typed",
+]
+dependencies = []
+
+[project.optional-dependencies]
+mcp = ["mcp>=1.2"]
+dev = ["pytest>=7"]
+
+[project.scripts]
+agent-permit = "agent_permit.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agent_permit"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
