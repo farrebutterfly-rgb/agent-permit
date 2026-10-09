@@ -26,7 +26,7 @@ jobs:
         run: pip-audit --desc on --skip-editable
       - name: SBOM (CycloneDX)
         run: cyclonedx-py environment --output-format json --output-file sbom.cdx.json
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v6
         with:
           name: sbom-cyclonedx
           path: sbom.cdx.json
