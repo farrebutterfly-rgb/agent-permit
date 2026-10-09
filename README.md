@@ -1,5 +1,7 @@
 # agent-permit
 
+[![test](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/test.yml/badge.svg)](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/test.yml) [![codeql](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/codeql.yml/badge.svg)](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/codeql.yml) [![supply-chain](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/supply-chain.yml/badge.svg)](https://github.com/farrebutterfly-rgb/agent-permit/actions/workflows/supply-chain.yml)
+
 A human approves one exact agent action, from the phone, before it happens.
 
 AI coding agents are good at doing things. Some things should not happen without a person saying yes: pushing to a shared branch, publishing a package, posting to an API, deleting infrastructure, sending a message. agent-permit puts a gate in front of those actions:
