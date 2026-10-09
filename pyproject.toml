@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "agent-permit"
-version = "0.1.0"
+version = "0.2.0"
 description = "Human approval for exact AI agent actions: a Claude Code hook and an MCP server, with phone approval over Telegram and a tamper-evident audit log."
 readme = "README.md"
 requires-python = ">=3.10"

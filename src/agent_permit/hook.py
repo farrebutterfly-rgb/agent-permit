@@ -5,6 +5,9 @@ Code's normal permission flow decides. If a rule matches, the call goes through 
 when an approval exists for this exact tool and input; one use is consumed. Otherwise
 a permit is requested (once per distinct action), the phone is notified, and the hook
 exits 2 so Claude Code blocks the call and shows the reason to the agent.
+
+While a freeze is active (``agent-permit freeze on``), every tool call is blocked,
+whether or not a rule matches, until a human switches it off.
 """
 
 from __future__ import annotations
@@ -22,6 +25,12 @@ Notify = Callable[[object], None]
 def evaluate(event: dict, cfg: Config, store: Store, notify: Optional[Notify] = None) -> Tuple[int, str]:
     tool = event.get("tool_name", "")
     tool_input = event.get("tool_input", {})
+    fz = store.frozen()
+    if fz:   # emergency stop: every tool call, rule or no rule, until a human unfreezes
+        return 2, (
+            f"Blocked by agent-permit: FROZEN by {fz['by']} ({fz['reason']}). Every tool call is blocked "
+            "until a human runs `agent-permit freeze off`. Do nothing else and wait."
+        )
     text = canonical(tool_input)
     rule = next((r for r in cfg.rules if r.matches(tool, text)), None)
     if rule is None:

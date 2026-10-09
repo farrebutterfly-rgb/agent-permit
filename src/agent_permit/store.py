@@ -36,6 +36,14 @@ CREATE TABLE IF NOT EXISTS permits (
     uses_left    INTEGER NOT NULL DEFAULT 0
 );
 CREATE INDEX IF NOT EXISTS permits_fp ON permits (fingerprint, status);
+CREATE TABLE IF NOT EXISTS freeze (
+    id      INTEGER PRIMARY KEY CHECK (id = 1),
+    active  INTEGER NOT NULL DEFAULT 0,
+    reason  TEXT,
+    by_whom TEXT,
+    since   REAL
+);
+INSERT OR IGNORE INTO freeze (id, active) VALUES (1, 0);
 """
 
 
@@ -238,8 +246,37 @@ class Store:
                           grant_ttl=grant_ttl if approve else None, uses=uses if approve else None)
         return self.get(pid)
 
+    # --------------------------------------------------------------- freeze
+
+    def freeze(self, reason: str, by: str) -> dict:
+        """Emergency stop. While active, the hook blocks every tool call and the MCP tools
+        grant nothing, whatever permits exist. Only a human unfreezes."""
+        now = time.time()
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE freeze SET active=1, reason=?, by_whom=?, since=? WHERE id=1", (reason[:300], by, now))
+        self.audit.append("freeze", reason=reason[:300], by=by)
+        return {"active": True, "reason": reason[:300], "by": by, "since": now}
+
+    def unfreeze(self, by: str) -> dict:
+        with self._lock, self._conn() as c:
+            c.execute("UPDATE freeze SET active=0 WHERE id=1")
+        self.audit.append("unfreeze", by=by)
+        return {"active": False}
+
+    def frozen(self) -> Optional[dict]:
+        """The active freeze as a dict, or None."""
+        with self._conn() as c:
+            r = c.execute("SELECT active, reason, by_whom, since FROM freeze WHERE id=1").fetchone()
+        if r is None or not r["active"]:
+            return None
+        return {"active": True, "reason": r["reason"], "by": r["by_whom"], "since": r["since"]}
+
     def consume(self, action: Any, agent: str = "agent") -> Optional[Permit]:
-        """Use one approval for exactly this action. Returns the permit, or None if there is none."""
+        """Use one approval for exactly this action. Returns the permit, or None if there is none
+        or the store is frozen (a freeze beats every permit)."""
+        if self.frozen():
+            self.audit.append("frozen_refusal", fingerprint=fingerprint(action), agent=agent)
+            return None
         fp = fingerprint(action)
         now = time.time()
         with self._lock, self._conn() as c:

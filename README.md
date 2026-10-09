@@ -8,6 +8,7 @@ AI coding agents are good at doing things. Some things should not happen without
 * **MCP server.** Any MCP-capable agent can request a permit, wait for the decision and consume it right before acting.
 * **Phone approval over Telegram.** Each request arrives as a message with Approve and Deny buttons. Long polling, so no public web server is needed.
 * **Tamper-evident audit log.** Every request, decision and use is written to a hash-chained JSON Lines file. `agent-permit verify` reports any edited or deleted line.
+* **Emergency stop.** `agent-permit freeze on "reason"` or `/freeze reason` in the Telegram chat blocks every tool call, rule or no rule, approval or no approval, until a human releases it.
 
 ## How a permit works
 
@@ -73,6 +74,22 @@ agent-permit telegram
 
 Button presses from any other chat or user are rejected and logged. Without Telegram you can decide from the terminal with `agent-permit list`, `agent-permit approve 12` and `agent-permit deny 12`.
 
+## Emergency stop
+
+Something is going wrong and you do not know what yet. Freeze first, read later.
+
+```bash
+agent-permit freeze on "agent mailed the wrong client"
+agent-permit freeze status      # exit code 1 while frozen, for scripts and watchdogs
+agent-permit freeze off
+```
+
+From the phone, type `/freeze agent mailed the wrong client` or `/unfreeze` in the Telegram chat. Only the configured chat and user ids are accepted.
+
+While frozen, the hook blocks every tool call with exit code 2, not only the ones that match a rule, and tells the agent to wait. Existing approvals do not help: `use_permit` and the hook refuse until the freeze is off. The freeze lives in the store, so it survives restarts, and `freeze`, `unfreeze` and every refused attempt are written to the audit chain.
+
+The same mechanism runs on the author's own platform, where a nightly chaos test switches it on and off and checks that every agent stops and the alert reaches the SIEM.
+
 ## MCP server
 
 ```json
@@ -89,7 +106,8 @@ Tools:
 |---|---|
 | `request_permit(action, summary, wait_seconds=0)` | Requests approval for the exact `action` (JSON or text) with a plain summary for the human. Can wait up to an hour for the decision. |
 | `check_permit(permit_id)` | Returns pending, approved, denied, expired or used. |
-| `use_permit(action)` | Consumes one approval for the identical action. Returns `allowed: false` if there is none. |
+| `use_permit(action)` | Consumes one approval for the identical action. Returns `allowed: false` if there is none, or if the emergency stop is on. |
+| `freeze_status()` | Whether the emergency stop is on, by whom and why. |
 
 The MCP tools are cooperative: they give a reliable answer to an agent that asks, but they cannot stop an agent that never asks. Use the hook for enforcement.
 
@@ -124,6 +142,7 @@ To use your own rules, write `~/.agent-permit/rules.json` (or point `AGENT_PERMI
 * **Rules are patterns.** Review them for your own tools. A command that is obfuscated enough will not match a regex.
 * **An approval is used when the call is allowed, not when it succeeds.** If the action fails, ask again.
 * **Telegram is trusted for the decision.** Use `AGENT_PERMIT_TELEGRAM_USERS` and a private chat. Never put secrets or client content in the summary, describe the action instead.
+* **The freeze stops agents that go through the hook or the MCP tools.** A process that is already running, or an agent that talks to a tool without either, is not stopped. Kill those by hand.
 * **The audit log is tamper-evident, not tamper-proof.** Anyone with write access can rewrite the whole chain. Ship it to a separate system if you need that.
 
 ## Development

@@ -33,6 +33,9 @@ def tools(cfg: Config, store: Store, notify: Optional[Callable] = None, sleep: C
         summary: one or two plain sentences for the human: what, to whom, why.
         wait_seconds: how long to wait for the decision (0 returns at once, max 3600).
         """
+        fz = store.frozen()
+        if fz:
+            return {"id": None, "status": "frozen", "reason": fz["reason"], "by": fz["by"], "created": False}
         p, created = store.request(_parse(action), summary, agent=agent, request_ttl=cfg.request_ttl)
         if created and notify:
             try:
@@ -58,10 +61,18 @@ def tools(cfg: Config, store: Store, notify: Optional[Callable] = None, sleep: C
         Returns allowed=true only if an unexpired approval exists for the identical action.
         If allowed is false, do not perform the action.
         """
+        fz = store.frozen()
+        if fz:
+            return {"allowed": False, "id": None, "frozen": True, "reason": fz["reason"]}
         p = store.consume(_parse(action), agent=agent)
         return {"allowed": p is not None, "id": p.id if p else None}
 
-    return request_permit, check_permit, use_permit
+    def freeze_status() -> dict:
+        """Whether the emergency stop is on. While it is, no action is allowed and no permit helps."""
+        fz = store.frozen()
+        return {"frozen": bool(fz), **({"reason": fz["reason"], "by": fz["by"], "since": fz["since"]} if fz else {})}
+
+    return request_permit, check_permit, use_permit, freeze_status
 
 
 def build(cfg: Config, store: Store, notify: Optional[Callable] = None):
